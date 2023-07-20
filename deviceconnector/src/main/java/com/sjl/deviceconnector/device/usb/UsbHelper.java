@@ -34,7 +34,7 @@ public class UsbHelper implements ReceiverObservable {
     private final static String ACTION_USB_STATE = "android.hardware.usb.action.USB_STATE";
 
     private BroadcastReceiver mBroadcastReceiver;
-    private ConnectedListener<UsbDevice> connectedListener;
+    private List<ConnectedListener<UsbDevice>> connectedListener;
     private UsbPermissionListener usbPermissionListener;
     private UsbPlugListener usbPlugListener;
 
@@ -47,7 +47,6 @@ public class UsbHelper implements ReceiverObservable {
     }
 
 
-
     private static final class UsbHelperHolder {
         private static UsbHelper singleton = new UsbHelper();
     }
@@ -55,10 +54,14 @@ public class UsbHelper implements ReceiverObservable {
 
     /**
      * 连接状态监听
+     *
      * @param connectedListener
      */
-    public void setConnectedListener(ConnectedListener<UsbDevice> connectedListener) {
-        this.connectedListener = connectedListener;
+    public synchronized void setConnectedListener(ConnectedListener<UsbDevice> connectedListener) {
+        if (this.connectedListener == null) {
+            this.connectedListener = new ArrayList<>();
+        }
+        this.connectedListener.add(connectedListener);
     }
 
     /**
@@ -149,7 +152,6 @@ public class UsbHelper implements ReceiverObservable {
     }
 
 
-
     @Override
     public void registerReceiver() {
         Context context = DeviceContext.getContext();
@@ -158,7 +160,7 @@ public class UsbHelper implements ReceiverObservable {
         filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
         filter.addAction(ACTION_USB_STATE);
-        mBroadcastReceiver =  new MyBroadcastReceiver();
+        mBroadcastReceiver = new MyBroadcastReceiver();
         context.registerReceiver(mBroadcastReceiver, filter);
     }
 
@@ -214,15 +216,19 @@ public class UsbHelper implements ReceiverObservable {
                 List<UsbDevice> deviceList = getDeviceList();
                 UsbDevice device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                 LogUtils.w("connected:" + connected + ",设备数：" + deviceList.size());
-                if (deviceList == null || deviceList.isEmpty()){
+                if (deviceList == null || deviceList.isEmpty()) {
                     return;
                 }
-                if (connectedListener != null){
-                    connectedListener.onResult(device,connected);
+                if (connectedListener != null) {
+                    for (ConnectedListener<UsbDevice> usbDeviceConnectedListener : connectedListener) {
+                        usbDeviceConnectedListener.onResult(device, connected);
+                    }
                 }
             }
         }
-    };
+    }
+
+    ;
 
 
 }

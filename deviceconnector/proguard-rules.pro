@@ -19,3 +19,19 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+-keep class android.serialport.**{*;}
+-keep class * implements com.hoho.android.usbserial.driver.UsbSerialDriver {
+
+        public static java.util.Map getSupportedDevices();
+}
+-keep class com.sjl.deviceconnector.DeviceContext{*;}
+-keep class com.sjl.deviceconnector.device.bluetooth.BluetoothHelper{*;}
+-keep class com.sjl.deviceconnector.device.usb.UsbHelper{*;}
+-keep class com.sjl.deviceconnector.listener.UsbPlugListener{*;}
+-keep class com.sjl.deviceconnector.entity.BluetoothScanResult{*;}
+-keep class com.sjl.deviceconnector.listener.BluetoothScanListener{*;}
+-keep class com.sjl.deviceconnector.device.serialport.SerialPortHelper{*;}
+-keep class com.sjl.deviceconnector.manager.*{*;}
+-keep class com.sjl.deviceconnector.provider.*{*;}
+-keep class com.sjl.deviceconnector.util.PermissionUtils{*;}
+

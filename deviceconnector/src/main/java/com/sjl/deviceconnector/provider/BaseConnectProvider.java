@@ -138,7 +138,7 @@ public abstract class BaseConnectProvider implements IConnectProvider {
      * @return
      */
     protected boolean checkRule(byte[] buffer, int read) {
-        return false;
+        return true;
     }
 
 

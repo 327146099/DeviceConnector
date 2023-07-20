@@ -6,13 +6,21 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 
+import android.os.Build;
 import com.sjl.deviceconnector.DeviceContext;
 import com.sjl.deviceconnector.device.bluetooth.scanner.AbstractBluetoothScanner;
 import com.sjl.deviceconnector.device.bluetooth.scanner.BluetoothClassicScanner;
+import com.sjl.deviceconnector.entity.BluetoothScanResult;
 import com.sjl.deviceconnector.listener.BluetoothScanListener;
 import com.sjl.deviceconnector.listener.ConnectedListener;
 import com.sjl.deviceconnector.listener.ReceiverObservable;
 import com.sjl.deviceconnector.util.LogUtils;
+import com.sjl.deviceconnector.util.PermissionUtils;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 
 /**
  * 蓝牙辅助类
@@ -27,7 +35,7 @@ public class BluetoothHelper implements ReceiverObservable {
     private BroadcastReceiver mBroadcastReceiver;
 
     private AbstractBluetoothScanner bluetoothScanner;
-    protected ConnectedListener<BluetoothDevice> connectedListener;
+    protected List<ConnectedListener<BluetoothDevice>> connectedListener;
     private static final int DEFAULT_SCAN_TIME = 8 * 1000;
     /**
      * 扫描时间,单位毫秒
@@ -52,8 +60,11 @@ public class BluetoothHelper implements ReceiverObservable {
      *
      * @param connectedListener
      */
-    public void setConnectedListener(ConnectedListener<BluetoothDevice> connectedListener) {
-        this.connectedListener = connectedListener;
+    public synchronized void setConnectedListener(ConnectedListener<BluetoothDevice> connectedListener) {
+        if (this.connectedListener == null) {
+            this.connectedListener = new ArrayList<>();
+        }
+        this.connectedListener.add(connectedListener);
     }
 
 
@@ -64,6 +75,41 @@ public class BluetoothHelper implements ReceiverObservable {
      */
     public void setBluetoothScanner(AbstractBluetoothScanner bluetoothScanner) {
         this.bluetoothScanner = bluetoothScanner;
+    }
+
+    /**
+     * 查找蓝牙设备
+     *
+     * @param scanTime 扫描时间
+     * @return 蓝牙设备列表
+     */
+    public List<BluetoothScanResult> listBluetooth(int scanTime) {
+        if (Build.VERSION.SDK_INT >= 23) {
+            if (!PermissionUtils.checkPermissions(new String[]{"android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_FINE_LOCATION"})) {
+                throw new RuntimeException("请先开启定位权限");
+            }
+        }
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        ConcurrentHashMap<String, BluetoothScanResult> map = new ConcurrentHashMap<>();
+        BluetoothHelper.getInstance().setScanTime(scanTime * 1000);
+        BluetoothHelper.getInstance().startScan(new BluetoothScanListener() {
+            @Override
+            public void onDeviceFound(BluetoothScanResult bluetoothScanResult) {
+                map.putIfAbsent(bluetoothScanResult.getAddress(), bluetoothScanResult);
+            }
+
+            @Override
+            public void onScanFinish() {
+                countDownLatch.countDown();
+            }
+        });
+
+        try {
+            countDownLatch.await();
+        } catch (InterruptedException ignored) {
+        }
+
+        return new ArrayList<>(map.values());
     }
 
     /**
@@ -150,7 +196,10 @@ public class BluetoothHelper implements ReceiverObservable {
                 String name = device.getName();
                 LogUtils.i("发现蓝牙设备连接成功，name:" + name);
                 if (connectedListener != null) {
-                    connectedListener.onResult(device, true);
+                    for (ConnectedListener<BluetoothDevice> bluetoothDeviceConnectedListener : connectedListener) {
+                        bluetoothDeviceConnectedListener.onResult(device, true);
+                    }
+
                 }
 
             } else if (BluetoothDevice.ACTION_ACL_DISCONNECTED.equals(action)) {
@@ -158,7 +207,9 @@ public class BluetoothHelper implements ReceiverObservable {
                 String name = device.getName();
                 LogUtils.w("发现蓝牙设备断开连接，name:" + name);
                 if (connectedListener != null) {
-                    connectedListener.onResult(device, false);
+                    for (ConnectedListener<BluetoothDevice> bluetoothDeviceConnectedListener : connectedListener) {
+                        bluetoothDeviceConnectedListener.onResult(device, false);
+                    }
                 }
             }
         }
