@@ -163,6 +163,10 @@ public class BluetoothHelper implements ReceiverObservable {
 
     @Override
     public void registerReceiver() {
+        if (mBroadcastReceiver != null) {
+            return;
+        }
+
         Context context = DeviceContext.getContext();
         IntentFilter intent = new IntentFilter();
 

@@ -1,6 +1,10 @@
 apply plugin: 'com.android.library'
 apply plugin: 'com.github.dcendents.android-maven'//this
-group='com.github.kellysong'//this
+apply plugin: 'maven-publish'
+apply from: "../config.gradle"
+
+group = 'com.github.kellysong'//this
+version = ext.android.versionName//this
 
 android {
     compileSdkVersion 29
@@ -19,7 +23,7 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled true
+            minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
@@ -39,4 +43,28 @@ dependencies {
     compileOnly "androidx.appcompat:appcompat:1.3.1"
 
 
+}
+publishing {
+    repositories {
+        maven {
+            credentials {
+                username 'bytesafe' // 仓库发布用户名
+                password '01HDFN2NQ9MNBMD0XBK2Y9M374' // 仓库发布用户密码
+            }
+            url 'https://neusoft.bytesafe.dev/maven/default-maven/' // 仓库地址
+        }
+    }
+}
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                // 添加以下配置可以自动从编译容器中获取release版本内容（使用debug可以获取debug版本内容），并生成pom文件
+                // 注意：发布物声明必须在 afterEvaluate 内部，因为 components 在 afterEvaluate 阶段才生成完成
+                from components.release
+                group 'com.neusoft.hb'
+                version '1.1.3'
+            }
+        }
+    }
 }

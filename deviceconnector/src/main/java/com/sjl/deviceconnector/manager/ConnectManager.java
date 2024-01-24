@@ -1,13 +1,20 @@
 package com.sjl.deviceconnector.manager;
 
+import android.content.Context;
+import android.hardware.usb.UsbDevice;
+import com.sjl.deviceconnector.DeviceContext;
 import com.sjl.deviceconnector.ErrorCode;
 import com.sjl.deviceconnector.device.bluetooth.BluetoothHelper;
 import com.sjl.deviceconnector.device.usb.UsbHelper;
 import com.sjl.deviceconnector.entity.SerialPortConfig;
+import com.sjl.deviceconnector.listener.UsbPermissionListener;
 import com.sjl.deviceconnector.provider.*;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -27,18 +34,15 @@ public class ConnectManager {
         static final ConnectManager INSTANCE = new ConnectManager();
     }
 
-    private final Map<String, Connect> container = new ConcurrentHashMap<>();
+    public void init(Context context, boolean debug) {
+        try {
+            if (DeviceContext.getContext() == null) {
+                DeviceContext.init(context, debug);
+            }
+        } catch (Exception e) {
+            DeviceContext.init(context, debug);
+        }
 
-    private final Lock lock = new ReentrantLock();
-
-    /**
-     * 连接存活时间
-     */
-    private long ideaTime = 60;
-
-    private final Thread checkThread;
-
-    public ConnectManager() {
         // 创建线程检查连接是否过期
         checkThread = new Thread(() -> {
             while (Thread.currentThread().isInterrupted()) {
@@ -70,18 +74,38 @@ public class ConnectManager {
 
         BluetoothHelper.getInstance().setConnectedListener((device, connected) -> {
             if (!connected) {
-                close(new ConnectInfo(device.getAddress()));
+                if (device != null) {
+                    close(new ConnectInfo(device.getAddress()));
+                }
             }
         });
+        // 注册监听器
+        UsbHelper.getInstance().registerReceiver();
 
         UsbHelper.getInstance().setConnectedListener((device, connected) -> {
             if (!connected) {
-                close(new ConnectInfo(device.getVendorId(), device.getProductId()));
+                if (device != null) {
+                    close(new ConnectInfo(device.getVendorId(), device.getProductId()));
+                }
             }
         });
 
         // 注册蓝牙事件
         BluetoothHelper.getInstance().registerReceiver();
+    }
+
+    private final Map<String, Connect> container = new ConcurrentHashMap<>();
+
+    private final Lock lock = new ReentrantLock();
+
+    /**
+     * 连接存活时间
+     */
+    private long ideaTime = 60;
+
+    private Thread checkThread;
+
+    private ConnectManager() {
     }
 
     public void shutdown() {
@@ -148,13 +172,17 @@ public class ConnectManager {
                 baseConnectProvider = new SerialPortConnectProvider(serialPortConfig);
                 break;
             case 2:
-                serialPortConfig = SerialPortConfig.newBuilder(connectInfo.getPort(), connectInfo.getBaudRate()).build();
+                // 请求usb权限
+                requestUsbPermission(connectInfo.getVendorId(), connectInfo.getProductId());
+                serialPortConfig = SerialPortConfig.newBuilder(connectInfo.getBaudRate()).build();
                 baseConnectProvider = new UsbComConnectProvider(connectInfo.getVendorId(), connectInfo.getProductId(), serialPortConfig);
                 break;
             case 3:
                 baseConnectProvider = new BluetoothConnectProvider(connectInfo.getMac());
                 break;
             case 4:
+                // 请求usb权限
+                requestUsbPermission(connectInfo.getVendorId(), connectInfo.getProductId());
                 baseConnectProvider = new UsbConnectProvider(connectInfo.getVendorId(), connectInfo.getProductId());
                 break;
             case 5:
@@ -190,5 +218,35 @@ public class ConnectManager {
         this.ideaTime = ideaTime;
     }
 
+
+    private void requestUsbPermission(int vendorId, int productId) {
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        AtomicBoolean granted = new AtomicBoolean(false);
+        UsbHelper.getInstance().requestPermission(vendorId, productId, new UsbPermissionListener() {
+            @Override
+            public void onGranted(UsbDevice usbDevice) {
+                granted.set(true);
+                System.out.println("回调授权");
+                countDownLatch.countDown();
+            }
+
+            @Override
+            public void onDenied(UsbDevice usbDevice) {
+                System.out.println("回调拒绝授权");
+                countDownLatch.countDown();
+            }
+        });
+        try {
+            countDownLatch.await(10, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            throw new RuntimeException("等待授权超时");
+        } finally {
+            // 删除授权listener
+            UsbHelper.getInstance().removePermissionListener();
+        }
+        if (!granted.get()) {
+            throw new RuntimeException("usb设备未授权");
+        }
+    }
 
 }

@@ -87,6 +87,17 @@ public class UsbHelper implements ReceiverObservable {
     /**
      * 申请Usb设备权限
      *
+     * @param vendorId  产商id
+     * @param productId 产品id
+     */
+    public void requestPermission(int vendorId, int productId,UsbPermissionListener usbPermissionListener) {
+        UsbDevice usbDevice = getDevice(vendorId, productId);
+        requestPermission(usbDevice, usbPermissionListener);
+    }
+
+    /**
+     * 申请Usb设备权限
+     *
      * @param usbDevice
      */
     public void requestPermission(UsbDevice usbDevice) {
@@ -154,6 +165,9 @@ public class UsbHelper implements ReceiverObservable {
 
     @Override
     public void registerReceiver() {
+        if (mBroadcastReceiver != null) {
+            return;
+        }
         Context context = DeviceContext.getContext();
         IntentFilter filter = new IntentFilter();
         filter.addAction(INTENT_ACTION_GRANT_USB);
@@ -179,6 +193,10 @@ public class UsbHelper implements ReceiverObservable {
         connectedListener = null;
         usbPermissionListener = null;
         usbPlugListener = null;
+    }
+
+    public void removePermissionListener() {
+        usbPermissionListener = null;
     }
 
     private final class MyBroadcastReceiver extends BroadcastReceiver {

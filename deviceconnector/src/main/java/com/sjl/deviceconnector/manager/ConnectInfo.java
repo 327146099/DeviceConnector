@@ -67,8 +67,7 @@ public class ConnectInfo {
     /**
      * usb转串口连接
      */
-    public ConnectInfo(String port, int baudRate, int vendorId, int productId) {
-        this.port = port;
+    public ConnectInfo(int baudRate, int vendorId, int productId) {
         this.baudRate = baudRate;
         this.vendorId = vendorId;
         this.productId = productId;
@@ -86,16 +85,29 @@ public class ConnectInfo {
 
     public String getKey() {
         if (type == 1) {
+            if (port == null || baudRate == null) {
+                throw new RuntimeException("port or baudRate is null");
+            }
             return port + ":" + baudRate;
         } else if (type == 2) {
-            return vendorId + ":" + productId + ":" + port + ":" + baudRate;
+            if (vendorId == null || productId == null || baudRate == null) {
+                throw new RuntimeException("vendorId or productId or baudRate is null");
+            }
+            return vendorId + ":" + productId + ":" + baudRate;
         } else if (type == 3) {
+            if (mac == null) {
+                throw new RuntimeException("mac is null");
+            }
             return mac;
-        }
-        if (type == 4) {
+        } else if (type == 4) {
+            if (vendorId == null || productId == null) {
+                throw new RuntimeException("vendorId or productId is null");
+            }
             return vendorId + ":" + productId;
-        }
-        if (type == 5) {
+        } else if (type == 5) {
+            if (mac == null) {
+                throw new RuntimeException("mac is null");
+            }
             return mac;
         }
         return null;
@@ -135,5 +147,30 @@ public class ConnectInfo {
 
     public void setAutoClose(boolean autoClose) {
         this.autoClose = autoClose;
+    }
+
+
+    public void setPort(String port) {
+        this.port = port;
+    }
+
+    public void setBaudRate(Integer baudRate) {
+        this.baudRate = baudRate;
+    }
+
+    public void setType(Integer type) {
+        this.type = type;
+    }
+
+    public void setVendorId(Integer vendorId) {
+        this.vendorId = vendorId;
+    }
+
+    public void setProductId(Integer productId) {
+        this.productId = productId;
+    }
+
+    public void setMac(String mac) {
+        this.mac = mac;
     }
 }

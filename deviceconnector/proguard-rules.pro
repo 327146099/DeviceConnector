@@ -34,4 +34,7 @@
 -keep class com.sjl.deviceconnector.manager.*{*;}
 -keep class com.sjl.deviceconnector.provider.*{*;}
 -keep class com.sjl.deviceconnector.util.PermissionUtils{*;}
+-keep class com.sjl.deviceconnector.manager.ConnectManager{*;}
+-keep class com.sjl.deviceconnector.ErrorCode{*;}
+-keep class com.sjl.deviceconnector.ErrorCodeUtils{*;}
 
