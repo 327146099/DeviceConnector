@@ -43,8 +43,9 @@ public class MyApplication extends BaseApplication {
             sw= 360;
         }
         AutoSizeConfig.getInstance().setDesignWidthInDp(sw);
+
         initLogConfig(true);
-        DeviceContext.init(this,true);
+
     }
 
 

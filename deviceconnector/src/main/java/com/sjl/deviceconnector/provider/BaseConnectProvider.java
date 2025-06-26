@@ -101,9 +101,9 @@ public abstract class BaseConnectProvider implements IConnectProvider {
         boolean checkExist = false;
         while (System.currentTimeMillis() - startWait <= wait) {
             int a = inStream.available();
-            if (a > 0) {
-                checkExist = true;
-                break;
+                if (a > 0) {
+                    checkExist = true;
+                    break;
             }
 
         }

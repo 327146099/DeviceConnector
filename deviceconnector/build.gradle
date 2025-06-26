@@ -41,9 +41,8 @@ dependencies {
     api 'com.github.mik3y:usb-serial-for-android:3.4.3'
     api 'com.github.licheedev:Android-SerialPort-API:2.0.0'
     api 'androidx.annotation:annotation:1.2.0'
-
-    compileOnly "androidx.appcompat:appcompat:1.3.1"
-
+    api 'com.github.getActivity:XXPermissions:20.0'
+    implementation 'androidx.fragment:fragment:1.3.0'
 
 }
 publishing {
@@ -51,7 +50,7 @@ publishing {
         maven {
             credentials {
                 username 'bytesafe' // 仓库发布用户名
-                password '01HDFN2NQ9MNBMD0XBK2Y9M374' // 仓库发布用户密码
+                password '01JEWT9ZX92BPMP0RAZKG00X4D' // 仓库发布用户密码
             }
             url 'https://neusoft.bytesafe.dev/maven/default-maven/' // 仓库地址
         }
@@ -64,8 +63,8 @@ afterEvaluate {
                 // 添加以下配置可以自动从编译容器中获取release版本内容（使用debug可以获取debug版本内容），并生成pom文件
                 // 注意：发布物声明必须在 afterEvaluate 内部，因为 components 在 afterEvaluate 阶段才生成完成
                 from components.release
-                group 'com.neusoft.hb'
-                version '1.1.3'
+                group 'com.polaris'
+                version '1.3.1'
             }
         }
     }

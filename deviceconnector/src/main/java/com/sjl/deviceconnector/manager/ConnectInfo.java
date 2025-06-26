@@ -35,9 +35,19 @@ public class ConnectInfo {
     private Integer productId;
 
     /**
+     * usb设备名称
+     */
+    private String deviceName;
+
+    /**
      * 蓝牙地址
      */
     private String mac;
+
+    /**
+     * 蓝牙uuid
+     */
+    private String uuid;
 
     /*是否自动回收
      */
@@ -103,7 +113,7 @@ public class ConnectInfo {
             if (vendorId == null || productId == null) {
                 throw new RuntimeException("vendorId or productId is null");
             }
-            return vendorId + ":" + productId;
+            return vendorId + ":" + productId + ":" + deviceName;
         } else if (type == 5) {
             if (mac == null) {
                 throw new RuntimeException("mac is null");
@@ -117,19 +127,19 @@ public class ConnectInfo {
         return port;
     }
 
-    public int getBaudRate() {
+    public Integer getBaudRate() {
         return baudRate;
     }
 
-    public int getType() {
+    public Integer getType() {
         return type;
     }
 
-    public int getVendorId() {
+    public Integer getVendorId() {
         return vendorId;
     }
 
-    public int getProductId() {
+    public Integer getProductId() {
         return productId;
     }
 
@@ -172,5 +182,21 @@ public class ConnectInfo {
 
     public void setMac(String mac) {
         this.mac = mac;
+    }
+
+    public String getDeviceName() {
+        return deviceName;
+    }
+
+    public void setDeviceName(String deviceName) {
+        this.deviceName = deviceName;
+    }
+
+    public String getUuid() {
+        return uuid;
+    }
+
+    public void setUuid(String uuid) {
+        this.uuid = uuid;
     }
 }

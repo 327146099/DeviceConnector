@@ -1,12 +1,13 @@
 package com.sjl.deviceconnector.device.bluetooth;
 
+import android.Manifest;
 import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-
 import android.os.Build;
+import com.hjq.permissions.Permission;
 import com.sjl.deviceconnector.DeviceContext;
 import com.sjl.deviceconnector.device.bluetooth.scanner.AbstractBluetoothScanner;
 import com.sjl.deviceconnector.device.bluetooth.scanner.BluetoothClassicScanner;
@@ -14,6 +15,7 @@ import com.sjl.deviceconnector.entity.BluetoothScanResult;
 import com.sjl.deviceconnector.listener.BluetoothScanListener;
 import com.sjl.deviceconnector.listener.ConnectedListener;
 import com.sjl.deviceconnector.listener.ReceiverObservable;
+import com.sjl.deviceconnector.util.BluetoothUtils;
 import com.sjl.deviceconnector.util.LogUtils;
 import com.sjl.deviceconnector.util.PermissionUtils;
 
@@ -77,6 +79,33 @@ public class BluetoothHelper implements ReceiverObservable {
         this.bluetoothScanner = bluetoothScanner;
     }
 
+    public void requireBluetoothPermission() {
+        if (!BluetoothUtils.isEnabled()) {
+            throw new RuntimeException("蓝牙未开启");
+        }
+        List<String> mPermissionList = new ArrayList<>();
+        String[] permissions;
+        if (Build.VERSION.SDK_INT >= 31) {
+            // Android 版本大于等于 Android12 时
+            mPermissionList.add(Permission.BLUETOOTH_SCAN);
+            mPermissionList.add(Permission.BLUETOOTH_ADVERTISE);
+            mPermissionList.add(Permission.BLUETOOTH_CONNECT);
+            mPermissionList.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+            mPermissionList.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        } else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                mPermissionList.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+                mPermissionList.add(Manifest.permission.ACCESS_FINE_LOCATION);
+            } else {
+            }
+        }
+
+        PermissionUtils.PermissionResult permissionResult = PermissionUtils.checkPermissions(mPermissionList.toArray(new String[0]));
+        if (!permissionResult.isSuccess()) {
+            throw new RuntimeException("蓝牙权限未授权");
+        }
+    }
+
     /**
      * 查找蓝牙设备
      *
@@ -84,11 +113,9 @@ public class BluetoothHelper implements ReceiverObservable {
      * @return 蓝牙设备列表
      */
     public List<BluetoothScanResult> listBluetooth(int scanTime) {
-        if (Build.VERSION.SDK_INT >= 23) {
-            if (!PermissionUtils.checkPermissions(new String[]{"android.permission.ACCESS_COARSE_LOCATION", "android.permission.ACCESS_FINE_LOCATION"})) {
-                throw new RuntimeException("请先开启定位权限");
-            }
-        }
+
+        requireBluetoothPermission();
+
         CountDownLatch countDownLatch = new CountDownLatch(1);
         ConcurrentHashMap<String, BluetoothScanResult> map = new ConcurrentHashMap<>();
         BluetoothHelper.getInstance().setScanTime(scanTime * 1000);

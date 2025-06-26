@@ -1,7 +1,10 @@
 package com.sjl.deviceconnector.manager;
 
+import android.Manifest;
 import android.content.Context;
 import android.hardware.usb.UsbDevice;
+import android.os.Build;
+import com.hjq.permissions.Permission;
 import com.sjl.deviceconnector.DeviceContext;
 import com.sjl.deviceconnector.ErrorCode;
 import com.sjl.deviceconnector.device.bluetooth.BluetoothHelper;
@@ -9,12 +12,14 @@ import com.sjl.deviceconnector.device.usb.UsbHelper;
 import com.sjl.deviceconnector.entity.SerialPortConfig;
 import com.sjl.deviceconnector.listener.UsbPermissionListener;
 import com.sjl.deviceconnector.provider.*;
+import com.sjl.deviceconnector.util.PermissionUtils;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -121,6 +126,21 @@ public class ConnectManager {
      * 获取连接
      */
     public BaseConnectProvider get(ConnectInfo connectInfo) {
+        // 如果是usb连接，手动补全端口
+        if (connectInfo.getType() == ConnectInfo.USB) {
+            if (connectInfo.getDeviceName() == null) {
+                UsbDevice device = UsbHelper.getDevice(connectInfo.getVendorId(), connectInfo.getProductId());
+                if (device != null) {
+                    connectInfo.setDeviceName(device.getDeviceName());
+                }
+            } else if (connectInfo.getVendorId() == null || connectInfo.getProductId() == null) {
+                UsbDevice device = UsbHelper.getDevice(connectInfo.getDeviceName());
+                if (device != null) {
+                    connectInfo.setVendorId(device.getVendorId());
+                    connectInfo.setProductId(device.getProductId());
+                }
+            }
+        }
         String key = connectInfo.getKey();
         if (container.containsKey(key)) {
             Connect connect = container.get(key);
@@ -178,25 +198,38 @@ public class ConnectManager {
                 baseConnectProvider = new UsbComConnectProvider(connectInfo.getVendorId(), connectInfo.getProductId(), serialPortConfig);
                 break;
             case 3:
-                baseConnectProvider = new BluetoothConnectProvider(connectInfo.getMac());
+                // 请求蓝牙权限
+                BluetoothHelper.getInstance().requireBluetoothPermission();
+                if (connectInfo.getUuid() != null) {
+                    baseConnectProvider = new BluetoothConnectProvider(connectInfo.getMac(), connectInfo.getUuid());
+                } else {
+                    baseConnectProvider = new BluetoothConnectProvider(connectInfo.getMac());
+                }
                 break;
             case 4:
                 // 请求usb权限
-                requestUsbPermission(connectInfo.getVendorId(), connectInfo.getProductId());
-                baseConnectProvider = new UsbConnectProvider(connectInfo.getVendorId(), connectInfo.getProductId());
+                if (connectInfo.getDeviceName() != null) {
+                    requestUsbPermission(connectInfo.getDeviceName());
+                    baseConnectProvider = new UsbConnectProvider(connectInfo.getDeviceName());
+                } else {
+                    requestUsbPermission(connectInfo.getVendorId(), connectInfo.getProductId());
+                    baseConnectProvider = new UsbConnectProvider(connectInfo.getVendorId(), connectInfo.getProductId());
+                }
                 break;
             case 5:
+                // 请求蓝牙权限
+                BluetoothHelper.getInstance().requireBluetoothPermission();
                 baseConnectProvider = new BluetoothLeConnectProvider(connectInfo.getMac());
                 break;
             default:
                 baseConnectProvider = null;
         }
         if (baseConnectProvider == null) {
-            throw new RuntimeException("unsupported connect type");
+            throw new RuntimeException("不支持的连接类型");
         }
         int open = baseConnectProvider.open();
         if (open < 0) {
-            throw new RuntimeException("open connect failed");
+            throw new RuntimeException("连接失败");
         }
         return baseConnectProvider;
     }
@@ -218,34 +251,52 @@ public class ConnectManager {
         this.ideaTime = ideaTime;
     }
 
+    private void requestUsbPermission(String deviceName) {
+        List<UsbDevice> deviceList = UsbHelper.getDeviceList();
+        for (UsbDevice usbDevice : deviceList) {
+            if (usbDevice.getDeviceName().equals(deviceName)) {
+                SynchronousQueue<Boolean> result = new SynchronousQueue<>();
+                UsbHelper.getInstance().requestPermission(usbDevice, new UsbPermissionListener() {
+                    @Override
+                    public void onGranted(UsbDevice usbDevice) {
+                        new Thread(() -> {
+                            try {
+                                result.put(true);
+                            } catch (InterruptedException ignored) {
+                            }
+                        }).start();
+                    }
+
+                    @Override
+                    public void onDenied(UsbDevice usbDevice) {
+                        new Thread(() -> {
+                            try {
+                                result.put(false);
+                            } catch (InterruptedException ignored) {
+                            }
+                        }).start();
+                    }
+                });
+                Boolean granted;
+                try {
+                    granted = result.poll(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException("等待授权超时");
+                } finally {
+                    // 删除授权listener
+                    UsbHelper.getInstance().removePermissionListener();
+                }
+                if (!granted) {
+                    throw new RuntimeException("usb设备未授权");
+                }
+            }
+        }
+    }
 
     private void requestUsbPermission(int vendorId, int productId) {
-        CountDownLatch countDownLatch = new CountDownLatch(1);
-        AtomicBoolean granted = new AtomicBoolean(false);
-        UsbHelper.getInstance().requestPermission(vendorId, productId, new UsbPermissionListener() {
-            @Override
-            public void onGranted(UsbDevice usbDevice) {
-                granted.set(true);
-                System.out.println("回调授权");
-                countDownLatch.countDown();
-            }
-
-            @Override
-            public void onDenied(UsbDevice usbDevice) {
-                System.out.println("回调拒绝授权");
-                countDownLatch.countDown();
-            }
-        });
-        try {
-            countDownLatch.await(10, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            throw new RuntimeException("等待授权超时");
-        } finally {
-            // 删除授权listener
-            UsbHelper.getInstance().removePermissionListener();
-        }
-        if (!granted.get()) {
-            throw new RuntimeException("usb设备未授权");
+        UsbDevice device = UsbHelper.getDevice(vendorId, productId);
+        if (device != null) {
+            requestUsbPermission(device.getDeviceName());
         }
     }
 

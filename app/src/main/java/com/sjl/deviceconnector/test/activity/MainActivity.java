@@ -27,6 +27,7 @@ import com.sjl.core.permission.PermissionsManager;
 import com.sjl.core.permission.PermissionsResultAction;
 import com.sjl.core.permission.SpecialPermission;
 import com.sjl.core.util.log.LogUtils;
+import com.sjl.deviceconnector.DeviceContext;
 import com.sjl.deviceconnector.ErrorCode;
 import com.sjl.deviceconnector.device.bluetooth.BluetoothHelper;
 import com.sjl.deviceconnector.device.bluetooth.ble.BluetoothLeNotifyListener;
@@ -88,6 +89,7 @@ public class MainActivity extends BaseActivity<MainActivityBinding> implements V
 
     @Override
     protected void initView() {
+        DeviceContext.init(this,true);
         viewBinding.rgFormat.setOnCheckedChangeListener(new RadioGroup.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(RadioGroup group, int checkedId) {
@@ -186,18 +188,30 @@ public class MainActivity extends BaseActivity<MainActivityBinding> implements V
             public void onNothingSelected(AdapterView<?> parent) {
             }
         });
-        PermissionsManager.getInstance().requestPermissionsIfNecessaryForResult(this, permissions, new PermissionsResultAction() {
+        new Thread(new Runnable() {
             @Override
-            public void onGranted() {
-                initDataWithPermission();
+            public void run() {
+                try{
+                    BluetoothHelper.getInstance().requireBluetoothPermission();
+                }catch (Exception e){
+                    e.printStackTrace();
+                }
             }
+        }).start();
 
-            @Override
-            public void onDenied(String permission) {
-                LogUtils.i("拒绝权限：" + permission);
-                finish();
-            }
-        });
+
+//        PermissionsManager.getInstance().requestPermissionsIfNecessaryForResult(this, permissions, new PermissionsResultAction() {
+//            @Override
+//            public void onGranted() {
+//                initDataWithPermission();
+//            }
+//
+//            @Override
+//            public void onDenied(String permission) {
+//                LogUtils.i("拒绝权限：" + permission);
+//                finish();
+//            }
+//        });
 
     }
 
@@ -360,7 +374,7 @@ public class MainActivity extends BaseActivity<MainActivityBinding> implements V
                         LogUtils.i("拒绝权限：" + permission);
                     }
                 });
-                
+
                 break;
             }
             case R.id.btn_stop_test_server: {

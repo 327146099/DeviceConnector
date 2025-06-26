@@ -68,6 +68,14 @@ public class UsbConnectProvider extends BaseConnectProvider {
 
     /**
      * 初始化Usb连接提供
+     *
+     */
+    public UsbConnectProvider(String deviceName) {
+        this(UsbHelper.getDevice(deviceName));
+    }
+
+    /**
+     * 初始化Usb连接提供
      */
     public UsbConnectProvider(UsbDevice usbDevice) {
         this.mUsbDevice = usbDevice;
