@@ -134,6 +134,9 @@ public class BluetoothHelper implements ReceiverObservable {
         try {
             countDownLatch.await();
         } catch (InterruptedException ignored) {
+        }finally {
+            // 停止扫描
+            BluetoothHelper.getInstance().stopScan();
         }
 
         return new ArrayList<>(map.values());
