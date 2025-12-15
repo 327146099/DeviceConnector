@@ -1,10 +1,7 @@
 package com.sjl.deviceconnector.manager;
 
-import android.Manifest;
 import android.content.Context;
 import android.hardware.usb.UsbDevice;
-import android.os.Build;
-import com.hjq.permissions.Permission;
 import com.sjl.deviceconnector.DeviceContext;
 import com.sjl.deviceconnector.ErrorCode;
 import com.sjl.deviceconnector.device.bluetooth.BluetoothHelper;
@@ -12,9 +9,7 @@ import com.sjl.deviceconnector.device.usb.UsbHelper;
 import com.sjl.deviceconnector.entity.SerialPortConfig;
 import com.sjl.deviceconnector.listener.UsbPermissionListener;
 import com.sjl.deviceconnector.provider.*;
-import com.sjl.deviceconnector.util.PermissionUtils;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -220,6 +215,10 @@ public class ConnectManager {
                 // 请求蓝牙权限
                 BluetoothHelper.getInstance().requireBluetoothPermission();
                 baseConnectProvider = new BluetoothLeConnectProvider(connectInfo.getMac());
+                break;
+            case 6:
+                // 请求wifi权限
+                baseConnectProvider = new WifiConnectProvider(connectInfo.getHost(), Integer.parseInt(connectInfo.getPort()), connectInfo.getConnectTimeout(), connectInfo.getReadTimeout());
                 break;
             default:
                 baseConnectProvider = null;

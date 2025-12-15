@@ -3,6 +3,7 @@ package com.sjl.deviceconnector.manager;
 public class ConnectInfo {
 
     public static final int SERIAL_PORT = 1;
+
     public static final int USB_COM = 2;
 
     public static final int BLUETOOTH = 3;
@@ -10,6 +11,8 @@ public class ConnectInfo {
     public static final int USB = 4;
 
     public static final int BLUETOOTH_BLE = 5;
+
+    public static final int WIFI = 6;
     /**
      * 串口
      */
@@ -48,6 +51,21 @@ public class ConnectInfo {
      * 蓝牙uuid
      */
     private String uuid;
+
+    /**
+     * host地址
+     */
+    private String host;
+
+    /**
+     * 连接超时时间，毫秒
+     */
+    private int connectTimeout = 3 * 1000;
+
+    /**
+     * 读取超时时间，毫秒
+     */
+    private int readTimeout = 5 * 1000;
 
     /*是否自动回收
      */
@@ -119,6 +137,11 @@ public class ConnectInfo {
                 throw new RuntimeException("mac is null");
             }
             return mac;
+        } else if (type == 6) {
+            if (host == null || port == null) {
+                throw new RuntimeException("host or port is null");
+            }
+            return host + ":" + port;
         }
         return null;
     }
@@ -198,5 +221,29 @@ public class ConnectInfo {
 
     public void setUuid(String uuid) {
         this.uuid = uuid;
+    }
+
+    public String getHost() {
+        return host;
+    }
+
+    public void setHost(String host) {
+        this.host = host;
+    }
+
+    public int getConnectTimeout() {
+        return connectTimeout;
+    }
+
+    public void setConnectTimeout(int connectTimeout) {
+        this.connectTimeout = connectTimeout;
+    }
+
+    public int getReadTimeout() {
+        return readTimeout;
+    }
+
+    public void setReadTimeout(int readTimeout) {
+        this.readTimeout = readTimeout;
     }
 }
