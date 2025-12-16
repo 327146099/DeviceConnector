@@ -111,6 +111,15 @@ public class ConnectInfo {
         this.type = 4;
     }
 
+    /**
+     * wifi连接
+     */
+    public ConnectInfo(String host, String port) {
+        this.host = host;
+        this.port = port;
+        this.type = 6;
+    }
+
     public String getKey() {
         if (type == 1) {
             if (port == null || baudRate == null) {
