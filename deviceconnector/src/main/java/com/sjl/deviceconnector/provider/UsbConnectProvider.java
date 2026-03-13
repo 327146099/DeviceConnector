@@ -123,7 +123,9 @@ public class UsbConnectProvider extends BaseConnectProvider {
                 if (usbInterface.getEndpointCount() == 1) {
                     continue;
                 }
+                // 过滤出有两个端点的接口
                 mUsbInterface = usbInterface;
+                break;
             }
             if (mUsbInterface == null) {
                 return ErrorCode.ERROR_FAIL;
