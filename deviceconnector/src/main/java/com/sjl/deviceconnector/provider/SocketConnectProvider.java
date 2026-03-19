@@ -19,8 +19,8 @@ import java.net.SocketAddress;
  */
 public class SocketConnectProvider extends BaseIoConnectProvider {
     private Socket mSocket;
-    private String ip;
-    private int port;
+    protected String ip;
+    protected int port;
     private int connectTimeout, readTimeout;
 
 

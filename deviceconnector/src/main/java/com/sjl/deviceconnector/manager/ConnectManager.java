@@ -220,6 +220,10 @@ public class ConnectManager {
                 // 请求wifi权限
                 baseConnectProvider = new WifiConnectProvider(connectInfo.getHost(), Integer.parseInt(connectInfo.getPort()), connectInfo.getConnectTimeout(), connectInfo.getReadTimeout());
                 break;
+            case 7:
+                // 请求wifi权限
+                baseConnectProvider = new SwSocketConnectProvider(connectInfo.getHost(), Integer.parseInt(connectInfo.getPort()), connectInfo.getConnectTimeout(), connectInfo.getReadTimeout());
+                break;
             default:
                 baseConnectProvider = null;
         }
