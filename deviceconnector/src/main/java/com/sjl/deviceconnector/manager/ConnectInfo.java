@@ -13,6 +13,8 @@ public class ConnectInfo {
     public static final int BLUETOOTH_BLE = 5;
 
     public static final int WIFI = 6;
+
+    public static final int SW_WIFI = 7;
     /**
      * 串口
      */
@@ -146,7 +148,7 @@ public class ConnectInfo {
                 throw new RuntimeException("mac is null");
             }
             return mac;
-        } else if (type == 6) {
+        } else if (type == 6 || type == 7) {
             if (host == null || port == null) {
                 throw new RuntimeException("host or port is null");
             }

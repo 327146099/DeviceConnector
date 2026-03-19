@@ -64,7 +64,7 @@ afterEvaluate {
                 // 注意：发布物声明必须在 afterEvaluate 内部，因为 components 在 afterEvaluate 阶段才生成完成
                 from components.release
                 group 'com.polaris'
-                version '1.3.2'
+                version '1.3.3'
             }
         }
     }
