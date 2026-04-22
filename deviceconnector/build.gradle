@@ -1,5 +1,5 @@
 apply plugin: 'com.android.library'
-//apply plugin: 'com.github.dcendents.android-maven'//this
+apply plugin: 'com.github.dcendents.android-maven'//this
 apply plugin: 'maven-publish'
 apply from: "../config.gradle"
 
