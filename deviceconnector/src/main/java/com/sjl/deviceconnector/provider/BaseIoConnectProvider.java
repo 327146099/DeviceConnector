@@ -91,4 +91,22 @@ public abstract class BaseIoConnectProvider extends BaseConnectProvider {
     public InputStream getInputStream() {
         return mInputStream;
     }
+
+    @Override
+    public void clearReadBuffer() {
+        InputStream in = mInputStream;
+        if (in == null) {
+            return;
+        }
+        try {
+            byte[] buf = new byte[256];
+            while (in.available() > 0) {
+                int read = in.read(buf);
+                if (read <= 0) {
+                    break;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
 }

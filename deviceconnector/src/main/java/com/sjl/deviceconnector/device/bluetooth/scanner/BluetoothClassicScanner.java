@@ -35,13 +35,17 @@ public class BluetoothClassicScanner extends AbstractBluetoothScanner implements
             if (bluetoothDevice.getAddress().equals(address)) {
                 notifyDeviceFounded(new BluetoothScanResult(bluetoothDevice,-1, (byte[]) null));
                 notifyScanFinish();
-                break;
+                return;
             }
         }
         registerReceiver();
         BluetoothAdapter bluetoothAdapter = BluetoothUtils.getBluetoothAdapter();
         if (bluetoothAdapter.isDiscovering()) {
             bluetoothAdapter.cancelDiscovery();
+            try {
+                Thread.sleep(300);
+            } catch (Exception ignored) {
+            }
         }
         bluetoothAdapter.startDiscovery();
     }

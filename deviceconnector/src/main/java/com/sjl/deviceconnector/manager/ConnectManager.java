@@ -1,5 +1,6 @@
 package com.sjl.deviceconnector.manager;
 
+import android.bluetooth.BluetoothAdapter;
 import android.content.Context;
 import android.hardware.usb.UsbDevice;
 import com.sjl.deviceconnector.DeviceContext;
@@ -195,6 +196,7 @@ public class ConnectManager {
             case 3:
                 // 请求蓝牙权限
                 BluetoothHelper.getInstance().requireBluetoothPermission();
+                cancelBluetoothDiscovery();
                 if (connectInfo.getUuid() != null) {
                     baseConnectProvider = new BluetoothConnectProvider(connectInfo.getMac(), connectInfo.getUuid());
                 } else {
@@ -214,6 +216,7 @@ public class ConnectManager {
             case 5:
                 // 请求蓝牙权限
                 BluetoothHelper.getInstance().requireBluetoothPermission();
+                cancelBluetoothDiscovery();
                 baseConnectProvider = new BluetoothLeConnectProvider(connectInfo.getMac());
                 break;
             case 6:
@@ -235,6 +238,16 @@ public class ConnectManager {
             throw new RuntimeException("连接失败");
         }
         return baseConnectProvider;
+    }
+
+    private void cancelBluetoothDiscovery() {
+        try {
+            BluetoothAdapter adapter = BluetoothAdapter.getDefaultAdapter();
+            if (adapter != null && adapter.isDiscovering()) {
+                adapter.cancelDiscovery();
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private static class Connect {

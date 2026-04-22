@@ -139,6 +139,13 @@ public class BluetoothHelper implements ReceiverObservable {
             BluetoothHelper.getInstance().stopScan();
         }
 
+        if (map.isEmpty()) {
+            List<BluetoothScanResult> list = BluetoothUtils.wrapBondedDevices();
+            for (BluetoothScanResult b : list) {
+                map.putIfAbsent(b.getAddress(), b);
+            }
+        }
+
         return new ArrayList<>(map.values());
     }
 

@@ -146,6 +146,9 @@ public abstract class BaseConnectProvider implements IConnectProvider {
         this.readWaitTimeout = readWaitTimeout;
     }
 
+    public void clearReadBuffer() {
+    }
+
 
     /**
      * 关闭流

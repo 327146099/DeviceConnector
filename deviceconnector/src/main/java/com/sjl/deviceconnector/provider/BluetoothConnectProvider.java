@@ -80,6 +80,10 @@ public class BluetoothConnectProvider extends BaseIoConnectProvider {
         if (state == ErrorCode.ERROR_OK) {
             return state;
         }
+
+        Exception lastException = null;
+
+        // 1. Secure connect
         try {
             mBluetoothSocket = mBluetoothDevice.createRfcommSocketToServiceRecord(UUID.fromString(uuid));
             mBluetoothSocket.connect();
@@ -88,10 +92,39 @@ public class BluetoothConnectProvider extends BaseIoConnectProvider {
             mOutputStream = mBluetoothSocket.getOutputStream();
             return ErrorCode.ERROR_OK;
         } catch (Exception e) {
-            LogUtils.e("蓝牙连接异常", e);
+            lastException = e;
             close();
-            return ErrorCode.ERROR_FAIL;
         }
+
+        // 2. Insecure connect
+        try {
+            mBluetoothSocket = mBluetoothDevice.createInsecureRfcommSocketToServiceRecord(UUID.fromString(uuid));
+            mBluetoothSocket.connect();
+            mConnectState = true;
+            mInputStream = mBluetoothSocket.getInputStream();
+            mOutputStream = mBluetoothSocket.getOutputStream();
+            return ErrorCode.ERROR_OK;
+        } catch (Exception e) {
+            lastException = e;
+            close();
+        }
+
+        // 3. Reflection fallback
+        try {
+            java.lang.reflect.Method m = mBluetoothDevice.getClass().getMethod("createRfcommSocket", new Class[]{int.class});
+            mBluetoothSocket = (BluetoothSocket) m.invoke(mBluetoothDevice, 1);
+            mBluetoothSocket.connect();
+            mConnectState = true;
+            mInputStream = mBluetoothSocket.getInputStream();
+            mOutputStream = mBluetoothSocket.getOutputStream();
+            return ErrorCode.ERROR_OK;
+        } catch (Exception e) {
+            lastException = e;
+            close();
+        }
+
+        LogUtils.e("蓝牙连接异常", lastException);
+        return ErrorCode.ERROR_FAIL;
     }
 
     @Override
