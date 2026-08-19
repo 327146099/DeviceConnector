@@ -6,8 +6,10 @@ import android.bluetooth.BluetoothGatt;
 import android.bluetooth.BluetoothGattCallback;
 import android.bluetooth.BluetoothGattCharacteristic;
 import android.bluetooth.BluetoothGattDescriptor;
+import android.bluetooth.BluetoothGattService;
 import android.bluetooth.BluetoothProfile;
 import android.os.Build;
+import android.util.Printer;
 
 import com.sjl.deviceconnector.DeviceContext;
 import com.sjl.deviceconnector.ErrorCode;
@@ -27,11 +29,17 @@ import com.sjl.deviceconnector.device.bluetooth.ble.request.NotifyRequest;
 import com.sjl.deviceconnector.device.bluetooth.ble.request.RemoteRssiRequest;
 import com.sjl.deviceconnector.device.bluetooth.ble.response.BluetoothLeResponse;
 import com.sjl.deviceconnector.exception.ProviderTimeoutException;
+import com.sjl.deviceconnector.util.ByteUtils;
 import com.sjl.deviceconnector.util.LogUtils;
 
 import java.lang.reflect.Method;
+import java.util.Arrays;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import androidx.annotation.RequiresApi;
 
@@ -74,18 +82,42 @@ public class BluetoothLeConnectProvider extends BaseConnectProvider {
     private boolean init = false;
 
     /**
+     * 默认写特征值所在服务
+     */
+    private UUID mDefaultWriteService;
+    /**
+     * 默认写特征值
+     */
+    private UUID mDefaultWriteCharacter;
+    /**
+     * 默认读（通知）特征值所在服务
+     */
+    private UUID mDefaultReadService;
+    /**
+     * 默认读（通知）特征值，用于流式 read 的数据来源
+     */
+    private UUID mDefaultReadCharacter;
+    /**
+     * 通知队列最大容量，防止消费速度跟不上表头 notify 推送速度时无界堆积导致内存溢出
+     */
+    private static final int MAX_NOTIFY_QUEUE_SIZE = 100;
+    /**
+     * 通知数据缓冲队列，由 onCharacteristicChanged 写入，read 消费
+     */
+    private final LinkedBlockingQueue<byte[]> mNotifyQueue = new LinkedBlockingQueue<>(MAX_NOTIFY_QUEUE_SIZE);
+    /**
+     * 上一次 read 未消费完的通知分片
+     */
+    private byte[] mNotifyLeftover;
+    private int mNotifyLeftoverOffset;
+
+    /**
      * 初始化一个蓝牙Ble提供者
      *
      * @param address
      */
     public BluetoothLeConnectProvider(String address) {
-        BluetoothAdapter defaultAdapter = BluetoothAdapter.getDefaultAdapter();
-        if (defaultAdapter == null) {
-            throw new NullPointerException("设备不支持蓝牙");
-        }
-        this.mBluetoothDevice = defaultAdapter.getRemoteDevice(address);
-        this.waiter = DEFAULT_WAITER;
-        initParams();
+        this(address, null, null, null, null);
     }
 
 
@@ -95,8 +127,50 @@ public class BluetoothLeConnectProvider extends BaseConnectProvider {
      * @param bluetoothDevice
      */
     public BluetoothLeConnectProvider(BluetoothDevice bluetoothDevice) {
+        this(bluetoothDevice, null, null, null, null);
+    }
+
+    /**
+     * 初始化一个蓝牙Ble提供者，并指定默认读写特征值
+     *
+     * @param address
+     * @param writeService  默认写特征值所在服务UUID，为null则write返回不支持
+     * @param writeCharacter 默认写特征值UUID
+     * @param readService   默认读（通知）特征值所在服务UUID，为null则read返回不支持
+     * @param readCharacter 默认读（通知）特征值UUID
+     */
+    public BluetoothLeConnectProvider(String address, UUID writeService, UUID writeCharacter,
+                                      UUID readService, UUID readCharacter) {
+        BluetoothAdapter defaultAdapter = BluetoothAdapter.getDefaultAdapter();
+        if (defaultAdapter == null) {
+            throw new NullPointerException("设备不支持蓝牙");
+        }
+        this.mBluetoothDevice = defaultAdapter.getRemoteDevice(address);
+        this.waiter = DEFAULT_WAITER;
+        this.mDefaultWriteService = writeService;
+        this.mDefaultWriteCharacter = writeCharacter;
+        this.mDefaultReadService = readService;
+        this.mDefaultReadCharacter = readCharacter;
+        initParams();
+    }
+
+    /**
+     * 初始化一个蓝牙Ble提供者，并指定默认读写特征值
+     *
+     * @param bluetoothDevice
+     * @param writeService  默认写特征值所在服务UUID，为null则write返回不支持
+     * @param writeCharacter 默认写特征值UUID
+     * @param readService   默认读（通知）特征值所在服务UUID，为null则read返回不支持
+     * @param readCharacter 默认读（通知）特征值UUID
+     */
+    public BluetoothLeConnectProvider(BluetoothDevice bluetoothDevice, UUID writeService, UUID writeCharacter,
+                                      UUID readService, UUID readCharacter) {
         this.mBluetoothDevice = bluetoothDevice;
         this.waiter = DEFAULT_WAITER;
+        this.mDefaultWriteService = writeService;
+        this.mDefaultWriteCharacter = writeCharacter;
+        this.mDefaultReadService = readService;
+        this.mDefaultReadCharacter = readCharacter;
         initParams();
     }
 
@@ -122,16 +196,18 @@ public class BluetoothLeConnectProvider extends BaseConnectProvider {
                 mCountDownLatch = new CountDownLatch(1);
                 mBluetoothGatt = mBluetoothDevice.connectGatt(DeviceContext.getContext(), false,
                         mGattCallback, BluetoothDevice.TRANSPORT_LE);
+                // 在等待连接就绪前先把gatt交给client，确保服务发现回调时client可用
+                mBluetoothLeClient.setBluetoothGatt(mBluetoothGatt);
                 waitOpenReady();
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
                 mCountDownLatch = new CountDownLatch(1);
                 mBluetoothGatt = mBluetoothDevice.connectGatt(DeviceContext.getContext(), false, mGattCallback);
+                mBluetoothLeClient.setBluetoothGatt(mBluetoothGatt);
                 waitOpenReady();
             }else {
                 return ErrorCode.ERROR_NOT_SUPPORTED;
             }
             if (mConnectState){
-                mBluetoothLeClient.setBluetoothGatt(mBluetoothGatt);
                 return ErrorCode.ERROR_OK;
             }else {
                 return ErrorCode.ERROR_OPEN_FAIL;
@@ -164,16 +240,17 @@ public class BluetoothLeConnectProvider extends BaseConnectProvider {
                 mCountDownLatch = new CountDownLatch(1);
                 mBluetoothGatt = mBluetoothDevice.connectGatt(DeviceContext.getContext(), false,
                         mGattCallback, BluetoothDevice.TRANSPORT_LE);
+                mBluetoothLeClient.setBluetoothGatt(mBluetoothGatt);
                 waitOpenReady();
             } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
                 mCountDownLatch = new CountDownLatch(1);
                 mBluetoothGatt = mBluetoothDevice.connectGatt(DeviceContext.getContext(), false, mGattCallback);
+                mBluetoothLeClient.setBluetoothGatt(mBluetoothGatt);
                 waitOpenReady();
             }
             tempReconnectCount++;
         } while (!mConnectState && tempReconnectCount <= reconnectCount);
         if (mConnectState){
-            mBluetoothLeClient.setBluetoothGatt(mBluetoothGatt);
             return ErrorCode.ERROR_OK;
         }else {
             return ErrorCode.ERROR_OPEN_FAIL;
@@ -181,22 +258,154 @@ public class BluetoothLeConnectProvider extends BaseConnectProvider {
     }
 
 
-    @Deprecated
+    /**
+     * 写数据，向构造器传入的默认写特征值写入
+     *
+     * @param sendParams 发送数据
+     * @param timeout    超时时间，单位ms
+     * @return 0 写成功，-1超时，-2发送失败，-7数据为空，-9未配置默认写特征值
+     */
     @Override
     public int write(byte[] sendParams, int timeout) {
-        return ErrorCode.ERROR_NOT_SUPPORTED;
+        if (mDefaultWriteService == null || mDefaultWriteCharacter == null) {
+            return ErrorCode.ERROR_NOT_SUPPORTED;
+        }
+        if (sendParams == null || sendParams.length == 0) {
+            return ErrorCode.ERROR_DATA_NULL;
+        }
+        if (getState() != ErrorCode.ERROR_OK) {
+            return ErrorCode.ERROR_NOT_CONNECTED;
+        }
+        try {
+            CharacteristicWriteRequest request = new CharacteristicWriteRequest();
+            request.setService(mDefaultWriteService);
+            request.setCharacter(mDefaultWriteCharacter);
+            request.setBytes(sendParams);
+            sendRequest(request, null, timeout);
+            return ErrorCode.ERROR_OK;
+        } catch (ProviderTimeoutException e) {
+            LogUtils.e("ble write超时", e);
+            return ErrorCode.ERROR_TIMEOUT;
+        } catch (Exception e) {
+            LogUtils.e("ble write异常", e);
+            return ErrorCode.ERROR_SEND;
+        }
     }
 
-    @Deprecated
+    /**
+     * 读数据，从通知缓冲队列中消费（数据来源为默认读特征值的通知）
+     *
+     * @param buffer  临时缓冲区
+     * @param timeout 超时时间，单位ms
+     * @return >0读取数据成功（代表数据长度），-1读取超时，-3接收数据失败，-7数据为空，-9未配置默认读特征值
+     */
     @Override
-    public int read(byte[] buffer, int timeout) {
-        return ErrorCode.ERROR_NOT_SUPPORTED;
+    public synchronized int read(byte[] buffer, int timeout) {
+        if (buffer == null || buffer.length == 0) {
+            return ErrorCode.ERROR_DATA_NULL;
+        }
+        if (mDefaultReadService == null || mDefaultReadCharacter == null) {
+            return ErrorCode.ERROR_NOT_SUPPORTED;
+        }
+        if (getState() != ErrorCode.ERROR_OK) {
+            return ErrorCode.ERROR_NOT_CONNECTED;
+        }
+        int total = consumeLeftover(buffer, 0);
+        long deadline = System.currentTimeMillis() + timeout;
+        try {
+            while (total < buffer.length) {
+                long remaining = deadline - System.currentTimeMillis();
+                if (remaining <= 0) {
+                    break;
+                }
+                // 还没有数据时阻塞等待首个通知分片；已有数据则非阻塞尽量多取
+                byte[] chunk = (total == 0)
+                        ? mNotifyQueue.poll(remaining, TimeUnit.MILLISECONDS)
+                        : mNotifyQueue.poll();
+                if (chunk == null || chunk.length == 0) {
+                    break;
+                }
+                int copy = Math.min(chunk.length, buffer.length - total);
+                System.arraycopy(chunk, 0, buffer, total, copy);
+                total += copy;
+                if (copy < chunk.length) {
+                    // 当前分片超出缓冲区剩余容量，留待下次 read 消费
+                    mNotifyLeftover = chunk;
+                    mNotifyLeftoverOffset = copy;
+                    break;
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return total > 0 ? total : ErrorCode.ERROR_TIMEOUT;
+        }
+        if (total == 0) {
+            return ErrorCode.ERROR_TIMEOUT;
+        }
+        Printer logging = mLogging;
+        if (logging != null) {
+            logging.println("<<<<< 收：" + ByteUtils.byteArrToHexString(Arrays.copyOfRange(buffer, 0, total)));
+        }
+        return total;
     }
 
-    @Deprecated
+    /**
+     * 写并读数据，先向默认写特征值写入，再从通知缓冲队列读取
+     *
+     * @param sendParams 发送命令
+     * @param buffer     临时缓冲区
+     * @param timeout    超时时间，单位ms
+     * @return >0读取数据成功（代表数据长度），-1读取超时，-2发送失败，-7数据为空
+     */
     @Override
-    public int read(byte[] sendParams, byte[] buffer, int timeout) {
-        return ErrorCode.ERROR_NOT_SUPPORTED;
+    public synchronized int read(byte[] sendParams, byte[] buffer, int timeout) {
+        if (sendParams == null || sendParams.length == 0) {
+            return ErrorCode.ERROR_DATA_NULL;
+        }
+        Printer logging = mLogging;
+        if (logging != null) {
+            logging.println(">>>>> 发：" + ByteUtils.byteArrToHexString(sendParams));
+        }
+        int ret = write(sendParams, timeout);
+        if (ret == ErrorCode.ERROR_OK) {
+            return read(buffer, timeout);
+        }
+        return ErrorCode.ERROR_SEND;
+    }
+
+    /**
+     * 清空通知缓冲队列与遗留分片
+     * <p>keepAlive 模式下，每次读取前由 BalanceService 调用，
+     * 避免上一次未消费完的通知分片或表头持续 notify 推送的历史数据
+     * 在下次 read 中被当作新数据返回，导致读数延迟。</p>
+     */
+    @Override
+    public synchronized void clearReadBuffer() {
+        mNotifyQueue.clear();
+        mNotifyLeftover = null;
+        mNotifyLeftoverOffset = 0;
+    }
+
+    /**
+     * 消费上一次 read 遗留的通知分片
+     *
+     * @param buffer 缓冲区
+     * @param offset  已写入偏移
+     * @return 消费后的偏移
+     */
+    private int consumeLeftover(byte[] buffer, int offset) {
+        if (mNotifyLeftover == null || mNotifyLeftoverOffset >= mNotifyLeftover.length) {
+            return offset;
+        }
+        int available = mNotifyLeftover.length - mNotifyLeftoverOffset;
+        int copy = Math.min(available, buffer.length - offset);
+        System.arraycopy(mNotifyLeftover, mNotifyLeftoverOffset, buffer, offset, copy);
+        mNotifyLeftoverOffset += copy;
+        if (mNotifyLeftoverOffset >= mNotifyLeftover.length) {
+            mNotifyLeftover = null;
+            mNotifyLeftoverOffset = 0;
+        }
+        return offset + copy;
     }
 
     /**
@@ -316,6 +525,9 @@ public class BluetoothLeConnectProvider extends BaseConnectProvider {
         resultTempBuffer.reset();
         mGattCallback = null;
         mConnectState = false;
+        mNotifyQueue.clear();
+        mNotifyLeftover = null;
+        mNotifyLeftoverOffset = 0;
         clearConnect();
     }
 
@@ -349,7 +561,13 @@ public class BluetoothLeConnectProvider extends BaseConnectProvider {
 
     private void waitOpenReady() {
         try {
-            mCountDownLatch.await();
+            if (mCountDownLatch == null) {
+                return;
+            }
+            // 等待连接 + 服务发现完成，加超时防止 onServicesDiscovered 不回调时永久阻塞
+            if (!mCountDownLatch.await(15, TimeUnit.SECONDS)) {
+                LogUtils.e("等待连接就绪超时（连接+服务发现）");
+            }
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -378,6 +596,85 @@ public class BluetoothLeConnectProvider extends BaseConnectProvider {
 
     }
 
+    /**
+     * 需要跳过的通用 BLE 服务（不承载业务数据）
+     */
+    private static final UUID SERVICE_GAP = UUID.fromString("00001800-0000-1000-8000-00805f9b34fb");
+    private static final UUID SERVICE_GATT = UUID.fromString("00001801-0000-1000-8000-00805f9b34fb");
+    private static final UUID SERVICE_DEVICE_INFO = UUID.fromString("0000180a-0000-1000-8000-00805f9b34fb");
+    private static final UUID SERVICE_BATTERY = UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb");
+
+    /**
+     * 服务发现后自动挑选默认读写特征值
+     * <p>当构造时未显式指定（如经 {@link ConnectManager} 单参构造的 BLE 连接）时，
+     * 跳过通用服务，选取首个带 NOTIFY/INDICATE 属性的特征值作为默认读特征值，
+     * 选取首个带 WRITE/WRITE_NO_RESPONSE 属性的特征值作为默认写特征值。
+     * 适用于蓝牙表头等单一业务服务的 BLE 设备。已显式指定的不会被覆盖。</p>
+     */
+    @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR2)
+    private void autoPickDefaultCharacteristics() {
+        boolean needRead = mDefaultReadService == null || mDefaultReadCharacter == null;
+        boolean needWrite = mDefaultWriteService == null || mDefaultWriteCharacter == null;
+        if (!needRead && !needWrite) {
+            return;
+        }
+        List<BluetoothGattService> services = mBluetoothGattWrap.getServices();
+        if (services == null || services.isEmpty()) {
+            return;
+        }
+        UUID pickedReadService = null;
+        UUID pickedReadChar = null;
+        UUID pickedWriteService = null;
+        UUID pickedWriteChar = null;
+        for (BluetoothGattService service : services) {
+            UUID serviceUuid = service.getUuid();
+            if (isGenericService(serviceUuid)) {
+                continue;
+            }
+            for (BluetoothGattCharacteristic characteristic : service.getCharacteristics()) {
+                int props = characteristic.getProperties();
+                if (pickedReadService == null
+                        && ((props & BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0
+                        || (props & BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0)) {
+                    pickedReadService = serviceUuid;
+                    pickedReadChar = characteristic.getUuid();
+                }
+                if (pickedWriteService == null
+                        && ((props & BluetoothGattCharacteristic.PROPERTY_WRITE) != 0
+                        || (props & BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE) != 0)) {
+                    pickedWriteService = serviceUuid;
+                    pickedWriteChar = characteristic.getUuid();
+                }
+                if (pickedReadService != null && pickedWriteService != null) {
+                    break;
+                }
+            }
+            if (pickedReadService != null && pickedWriteService != null) {
+                break;
+            }
+        }
+        if (needRead && pickedReadService != null) {
+            mDefaultReadService = pickedReadService;
+            mDefaultReadCharacter = pickedReadChar;
+            LogUtils.i("自动挑选默认读特征值: service=" + pickedReadService + ", char=" + pickedReadChar);
+        }
+        if (needWrite && pickedWriteService != null) {
+            mDefaultWriteService = pickedWriteService;
+            mDefaultWriteCharacter = pickedWriteChar;
+            LogUtils.i("自动挑选默认写特征值: service=" + pickedWriteService + ", char=" + pickedWriteChar);
+        }
+    }
+
+    private boolean isGenericService(UUID serviceUuid) {
+        if (serviceUuid == null) {
+            return true;
+        }
+        return SERVICE_GAP.equals(serviceUuid)
+                || SERVICE_GATT.equals(serviceUuid)
+                || SERVICE_DEVICE_INFO.equals(serviceUuid)
+                || SERVICE_BATTERY.equals(serviceUuid);
+    }
+
 
     @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR2)
     public class MyBluetoothGattCallback extends BluetoothGattCallback {
@@ -402,20 +699,22 @@ public class BluetoothLeConnectProvider extends BaseConnectProvider {
             if (status == BluetoothGatt.GATT_SUCCESS) {
                 if (newState == BluetoothProfile.STATE_CONNECTED){
                     mConnectState = true;
-                    //发现服务
+                    //发现服务，onServicesDiscovered 回调里才会释放 open 等待，
+                    // 确保自动挑选默认读写特征值在 open 返回前完成
                     discoveredServices();
                 }else if(newState == BluetoothProfile.STATE_DISCONNECTED) {
                     mConnectState = false;
                     //清除连接
                     clearConnect();
+                    notifyOpenReady();
                 }else {
                     LogUtils.e("重新连接");
                    /* //重新连接
                     if (mBluetoothGatt != null) {
                         mBluetoothGatt.connect();
                     }*/
+                    notifyOpenReady();
                 }
-                notifyOpenReady();
             } else {
                 close();
                 notifyOpenReady();
@@ -434,6 +733,9 @@ public class BluetoothLeConnectProvider extends BaseConnectProvider {
             super.onServicesDiscovered(gatt, status);
             if (BluetoothGatt.GATT_SUCCESS == status) {
                 mBluetoothGattWrap.addServices(gatt.getServices());
+                // 未显式配置默认读写特征值时（如通过 ConnectManager 单参构造）自动挑选，
+                // 适用于蓝牙表头等单一业务服务的 BLE 设备
+                autoPickDefaultCharacteristics();
             } else {
                 mBluetoothGattWrap.clear();
                 LogUtils.e("服务发现失败 status:" + status);
@@ -441,6 +743,16 @@ public class BluetoothLeConnectProvider extends BaseConnectProvider {
             if (mBluetoothLeServiceListener != null){
                 mBluetoothLeServiceListener.onServicesDiscovered(status,mBluetoothGattWrap.getServices());
             }
+            // 服务发现成功后，自动开启默认读（通知）特征值的通知，供流式 read 消费
+            if (BluetoothGatt.GATT_SUCCESS == status
+                    && mDefaultReadService != null && mDefaultReadCharacter != null) {
+                boolean ok = mBluetoothLeClient.setCharacteristicNotification(
+                        mDefaultReadService, mDefaultReadCharacter, true);
+                LogUtils.i("开启默认读特征值通知: " + ok);
+            }
+            // 服务发现完成（无论成功失败），释放 open 等待，
+            // 确保自动挑选默认读写特征值在 open 返回前完成
+            notifyOpenReady();
         }
 
         /**
@@ -496,9 +808,22 @@ public class BluetoothLeConnectProvider extends BaseConnectProvider {
         public void onCharacteristicChanged(BluetoothGatt gatt,
                                             BluetoothGattCharacteristic characteristic) {
             super.onCharacteristicChanged(gatt, characteristic);
-
+            UUID serviceUuid = characteristic.getService().getUuid();
+            UUID charUuid = characteristic.getUuid();
+            byte[] value = characteristic.getValue();
+            // 仅缓存默认读（通知）特征值的数据，供流式 read 消费
+            if (mDefaultReadService != null && mDefaultReadService.equals(serviceUuid)
+                    && mDefaultReadCharacter != null && mDefaultReadCharacter.equals(charUuid)) {
+                if (value != null && value.length > 0) {
+                    // 队列满时丢弃最旧的通知，确保最新数据能入队，避免读数长时间停留在陈旧值
+                    if (!mNotifyQueue.offer(value)) {
+                        mNotifyQueue.poll();
+                        mNotifyQueue.offer(value);
+                    }
+                }
+            }
             if (mBluetoothLeNotifyListener  != null){
-                mBluetoothLeNotifyListener.onNotify(characteristic.getService().getUuid(), characteristic.getUuid(), characteristic.getValue());
+                mBluetoothLeNotifyListener.onNotify(serviceUuid, charUuid, value);
             }
         }
 
