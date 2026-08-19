@@ -6,6 +6,8 @@ import android.bluetooth.le.BluetoothLeScanner;
 import android.os.Build;
 import androidx.annotation.RequiresApi;
 import com.sjl.deviceconnector.device.bluetooth.BluetoothHelper;
+import com.sjl.deviceconnector.device.bluetooth.scanner.AbstractBluetoothScanner;
+import com.sjl.deviceconnector.device.bluetooth.scanner.BluetoothLowEnergyScanner;
 import com.sjl.deviceconnector.entity.BluetoothInfo;
 import com.sjl.deviceconnector.entity.BluetoothScanResult;
 
@@ -92,7 +94,7 @@ public class BluetoothUtils {
     public static List<BluetoothScanResult> wrapBondedDevices() {
         List<BluetoothDevice> bondedDevices = getBondedDevices();
 
-        List<BluetoothScanResult> arrayList = new ArrayList(bondedDevices.size());
+        List<BluetoothScanResult> arrayList = new ArrayList<>(bondedDevices.size());
         for (BluetoothDevice bd : bondedDevices) {
             arrayList.add(new BluetoothScanResult(bd, -1, (byte[]) null));
         }
@@ -141,7 +143,7 @@ public class BluetoothUtils {
             }
             BluetoothInfo bluetoothInfo = new BluetoothInfo();
             // 如果设备名称为空，设置为Unknown Device
-            if (bluetoothScanResult.getName() == null || bluetoothScanResult.getName().equals("")) {
+            if (bluetoothScanResult.getName() == null || "".equals(bluetoothScanResult.getName())) {
                 bluetoothInfo.setDeviceName("Unknown");
             } else {
                 bluetoothInfo.setDeviceName(bluetoothScanResult.getName());
@@ -161,5 +163,51 @@ public class BluetoothUtils {
      */
     public static List<BluetoothInfo> listBluetooth(int scanTime) {
         return listBluetooth(scanTime, null);
+    }
+
+    /**
+     * 扫描BLE蓝牙设备
+     *
+     * @param scanTime
+     * @param filter
+     * @return
+     */
+    public static List<BluetoothInfo> listBluetoothLe(int scanTime, Predicate<BluetoothScanResult> filter) {
+        BluetoothHelper helper = BluetoothHelper.getInstance();
+        // 保存原扫描策略，扫描完成后恢复，避免影响后续经典蓝牙扫描
+        AbstractBluetoothScanner originalScanner = helper.getBluetoothScanner();
+        helper.setBluetoothScanner(new BluetoothLowEnergyScanner());
+        try {
+            List<BluetoothScanResult> bluetoothScanResults = helper.listBluetooth(scanTime);
+            List<BluetoothInfo> bluetoothInfos = new ArrayList<>();
+            for (BluetoothScanResult bluetoothScanResult : bluetoothScanResults) {
+                if (filter != null && !filter.test(bluetoothScanResult)) {
+                    continue;
+                }
+                BluetoothInfo bluetoothInfo = new BluetoothInfo();
+                // 如果设备名称为空，设置为Unknown Device
+                if (bluetoothScanResult.getName() == null || bluetoothScanResult.getName().equals("")) {
+                    bluetoothInfo.setDeviceName("Unknown");
+                } else {
+                    bluetoothInfo.setDeviceName(bluetoothScanResult.getName());
+                }
+                bluetoothInfo.setMac(bluetoothScanResult.getAddress());
+                bluetoothInfo.setRssi(bluetoothScanResult.getRssi());
+                bluetoothInfos.add(bluetoothInfo);
+            }
+            return bluetoothInfos;
+        } finally {
+            helper.setBluetoothScanner(originalScanner);
+        }
+    }
+
+    /**
+     * 扫描BLE蓝牙设备
+     *
+     * @param scanTime
+     * @return
+     */
+    public static List<BluetoothInfo> listBluetoothLe(int scanTime) {
+        return listBluetoothLe(scanTime, null);
     }
 }

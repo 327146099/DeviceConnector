@@ -71,6 +71,15 @@ public class BluetoothHelper implements ReceiverObservable {
 
 
     /**
+     * 获取蓝牙扫描策略
+     *
+     * @return
+     */
+    public AbstractBluetoothScanner getBluetoothScanner() {
+        return bluetoothScanner;
+    }
+
+    /**
      * 设置蓝牙扫描策略
      *
      * @param bluetoothScanner
